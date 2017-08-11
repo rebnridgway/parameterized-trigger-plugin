@@ -9,9 +9,11 @@ if(builds.size() > 0) {
 	h2("Subproject Builds");
 
 	ul(style:"list-style-type: none;") {
-		for (item in builds) {
+		for (item in builds.sort{it != null && it.hasProperty('description') ? it.description : ''}) {
+//		for (item in builds.sort{it.timeInMillis}) {
 			li {
 				if (item != null) {
+
 					a(href:"${rootURL}/${item.project.url}", class:"model-link") {
 						text(item.project.displayName)
 					}
@@ -20,10 +22,17 @@ if(builds.size() > 0) {
 								alt:"${item.iconColor.description}", height:"16", width:"16")
 						text(item.displayName)
 					}
+
+					if (item.hasProperty('description') && item.description != null && item.description != '') {
+						raw(' ' + item.description)
+	//						item.properties.each { prop, val ->
+	//							text(prop + '=' + val + " <br/> ")
+	//						}
+					}
 				}
 			}
 		}
-	} 
+	}
 }
 
 def projects = my.triggeredProjects

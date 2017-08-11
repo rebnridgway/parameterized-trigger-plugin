@@ -107,7 +107,7 @@ public class TriggerBuilder extends Builder {
                     throw new AbortException("Build aborted. No projects to trigger. Check your configuration!");
                 } else if (tokenizer.countTokens() != projectList.size()) {
 
-                    int nbrOfResolved = tokenizer.countTokens()-projectList.size();
+                    int nbrOfResolved = tokenizer.countTokens() - projectList.size();
 
                     // Identify the unresolved project(s)
                     Set<String> unsolvedProjectNames = new TreeSet<String>();
@@ -126,12 +126,12 @@ public class TriggerBuilder extends Builder {
                         missingProject.append("\n");
                     }
 
-                    throw new AbortException("Build aborted. Can't trigger undefined projects. "+nbrOfResolved+" of the below project(s) can't be resolved:\n" + missingProject.toString() + "Check your configuration!");
+                    throw new AbortException("Build aborted. Can't trigger undefined projects. " + nbrOfResolved + " of the below project(s) can't be resolved:\n" + missingProject.toString() + "Check your configuration!");
                 } else {
                     //handle non-blocking configs
-                    if(futures.isEmpty()){
+                    if (futures.isEmpty()) {
                         listener.getLogger().println("Triggering projects: " + getProjectListAsString(projectList));
-                        for(Job p : projectList) {
+                        for (Job p : projectList) {
                             BuildInfoExporterAction.addBuildInfoExporterAction(build, p.getFullName());
                         }
                         continue;
@@ -139,32 +139,45 @@ public class TriggerBuilder extends Builder {
                     //handle blocking configs
                     for (Job p : projectList) {
                         //handle non-buildable projects
-                        if(!config.canBeScheduled(p)){
-                            listener.getLogger().println("Skipping " + HyperlinkNote.encodeTo('/'+ p.getUrl(), p.getFullDisplayName()) + 
+                        if (!config.canBeScheduled(p)) {
+                            listener.getLogger().println("Skipping " + HyperlinkNote.encodeTo('/' + p.getUrl(), p.getFullDisplayName()) +
                                     ". The project is either disabled,"
                                     + " or the authenticated user " + ModelHyperlinkNote.encodeTo(User.current()) + " has no Item.BUILD permissions,"
                                     + " or the configuration has not been saved yet.");
                             continue;
                         }
-                        for (Future<Run> future : futures.get(p)) {
-                            try {
-                                if (future != null ) {
-                                    listener.getLogger().println("Waiting for the completion of " + HyperlinkNote.encodeTo('/'+ p.getUrl(), p.getFullDisplayName()));
-                                    Run b = future.get();
-                                    listener.getLogger().println(HyperlinkNote.encodeTo('/' + b.getUrl(), b.getFullDisplayName()) + " completed. Result was " + b.getResult());
-                                    BuildInfoExporterAction.addBuildInfoExporterAction(build, b.getParent().getFullName(), b.getNumber(), b.getResult());
-
-                                    if (buildStepResult && config.getBlock().mapBuildStepResult(b.getResult())) {
-                                        build.setResult(config.getBlock().mapBuildResult(b.getResult()));
-                                    } else {
-                                        buildStepResult = false;
-                                    }
-                                } else {
-                                    listener.getLogger().println("Skipping " + ModelHyperlinkNote.encodeTo(p) + ". The project was not triggered by some reason.");
+                        List<Future<Run>> runs = futures.get(p);
+                        try {
+                            if (futures != null) {
+                                for (Future<Run> future : runs) {
+                                    listener.getLogger().println("Waiting for the completion of " + HyperlinkNote.encodeTo('/' + p.getUrl(), p.getFullDisplayName()));
                                 }
-                            } catch (CancellationException x) {
-                                throw new AbortException(p.getFullDisplayName() +" aborted.");
+                                while (!runs.isEmpty()) {
+                                    List<Future<Run>> total_runs = new ArrayList<Future<Run>>(runs);
+                                    for (Future<Run> future : total_runs) {
+                                        if (!future.isDone()) {
+                                            Thread.sleep(100);
+                                            continue;
+                                        }
+
+                                        runs.remove(future);
+                                        Run b = future.get();
+
+                                        listener.getLogger().println(HyperlinkNote.encodeTo('/' + b.getUrl(), b.getFullDisplayName()) + " completed. Result was " + b.getResult());
+                                        BuildInfoExporterAction.addBuildInfoExporterAction(build, b.getParent().getFullName(), b.getNumber(), b.getResult());
+
+                                        if (buildStepResult && config.getBlock().mapBuildStepResult(b.getResult())) {
+                                            build.setResult(config.getBlock().mapBuildResult(b.getResult()));
+                                        } else {
+                                            buildStepResult = false;
+                                        }
+                                    }
+                                }
+                            } else {
+                                listener.getLogger().println("Skipping " + ModelHyperlinkNote.encodeTo(p) + ". The project was not triggered by some reason.");
                             }
+                        } catch (CancellationException x) {
+                            throw new AbortException(p.getFullDisplayName() + " aborted.");
                         }
                     }
                 }
