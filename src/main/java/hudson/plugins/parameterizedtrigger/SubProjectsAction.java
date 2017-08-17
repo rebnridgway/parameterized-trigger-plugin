@@ -1,7 +1,7 @@
 package hudson.plugins.parameterizedtrigger;
 
 import com.google.common.collect.ImmutableList;
-import hudson.model.AbstractProject;
+import hudson.model.Job;
 import hudson.model.Action;
 
 import java.util.List;
@@ -16,10 +16,10 @@ import java.util.List;
  */
 public class SubProjectsAction implements Action {
 
-    private AbstractProject<?,?> project;
+    private Job<?,?> project;
     private List<BlockableBuildTriggerConfig> configs;
 
-    public SubProjectsAction(AbstractProject<?,?> project, List<BlockableBuildTriggerConfig> configs) {
+    public SubProjectsAction(Job<?,?> project, List<BlockableBuildTriggerConfig> configs) {
         this.project = project;
         this.configs = configs;
     }
@@ -50,7 +50,7 @@ public class SubProjectsAction implements Action {
         return ImmutableList.of();
     }
 
-    public AbstractProject<?,?> getProject() {
+    public Job<?,?> getProject() {
         return project;
     }
 
