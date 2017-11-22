@@ -181,6 +181,7 @@ public class TriggerBuilder extends Builder implements DependencyDeclarer {
                             }
                         } catch (InterruptedException y) {
                             Queue buildQueue = Jenkins.getInstance().getQueue();
+                            int numQueueAborted = 0;
                             for (Queue.Item queueItem : buildQueue.getItems()) {
                                 List<Cause> causes = queueItem.getCauses();
                                 Cause buildQueueCause = null;
@@ -198,14 +199,19 @@ public class TriggerBuilder extends Builder implements DependencyDeclarer {
                                     UpstreamCause upstreamCause = (UpstreamCause) buildQueueCause;
                                     if (upstreamCause.pointsTo(build)) {
                                         boolean cancelled = buildQueue.cancel(queueItem);
+                                        numQueueAborted++;
                                         if (cancelled) {
                                             listener.getLogger().println("Removed item from Queue (Reason for queueing: " + queueItem.getWhy() + ")");
                                         }
                                     }
                                 }
+                                if (numQueueAborted == runs.size()) {
+                                    throw y;
+                                }
                             }
 
                             RunList runList = p.getBuilds();
+                            int numAborted = 0;
                             for (Iterator it = runList.iterator(); it.hasNext(); ) {
                                 Run latestBuild = (Run) it.next();
                                 List<Cause> buildCauses = latestBuild.getCauses();
@@ -231,6 +237,9 @@ public class TriggerBuilder extends Builder implements DependencyDeclarer {
                                             }
                                         }
                                     }
+                                }
+                                if (numAborted + numQueueAborted == runs.size()) {
+                                    throw y;
                                 }
                             }
                             throw new InterruptedException();
