@@ -57,7 +57,14 @@ import jenkins.model.Jenkins;
 
 import javax.servlet.ServletException;
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.StringTokenizer;
+import java.util.Arrays;
+import java.util.TreeSet;
+import java.util.Iterator;
+import java.util.Collection;
 import java.util.concurrent.CancellationException;
 import java.lang.InterruptedException;
 import java.util.concurrent.ExecutionException;
@@ -156,7 +163,7 @@ public class TriggerBuilder extends Builder implements DependencyDeclarer {
                                     listener.getLogger().println("Waiting for the completion of " + HyperlinkNote.encodeTo('/' + p.getUrl(), p.getFullDisplayName()));
                                 }
                                 while (!runs.isEmpty()) {
-                                    List<Future<Run>> total_runs = new ArrayList<Future<Run>>(runs);
+                                    List<Future<Run>> total_runs = new ArrayList<>(runs);
                                     for (Future<Run> future : total_runs) {
                                         if (!future.isDone()) {
                                             Thread.sleep(100);
@@ -180,42 +187,15 @@ public class TriggerBuilder extends Builder implements DependencyDeclarer {
                                 listener.getLogger().println("Skipping " + ModelHyperlinkNote.encodeTo(p) + ". The project was not triggered by some reason.");
                             }
                         } catch (InterruptedException y) {
-                            Queue buildQueue = Jenkins.getInstance().getQueue();
-                            int numQueueAborted = 0;
-                            for (Queue.Item queueItem : buildQueue.getItems()) {
-                                List<Cause> causes = queueItem.getCauses();
-                                Cause buildQueueCause = null;
-                                boolean userQueueCause = false;
-                                for (Cause c : causes) {
-                                    if (c instanceof Cause.UserIdCause || c instanceof Cause.UserCause || c instanceof Cause.RemoteCause) {
-                                        userQueueCause = true;
-                                        break;
-                                    }
-                                    if ((c instanceof UpstreamCause)) {
-                                        buildQueueCause = c;
-                                    }
-                                }
-                                if (!userQueueCause && buildQueueCause != null) {
-                                    UpstreamCause upstreamCause = (UpstreamCause) buildQueueCause;
-                                    if (upstreamCause.pointsTo(build)) {
-                                        boolean cancelled = buildQueue.cancel(queueItem);
-                                        numQueueAborted++;
-                                        if (cancelled) {
-                                            listener.getLogger().println("Removed item from Queue (Reason for queueing: " + queueItem.getWhy() + ")");
-                                        }
-                                    }
-                                }
-                                if (numQueueAborted == runs.size()) {
-                                    throw y;
-                                }
+                            for (Future<Run> future: runs) {
+                                future.cancel(false);
                             }
-
                             RunList runList = p.getBuilds();
-                            int numAborted = 0;
+                            int numCounted = 0;
                             for (Iterator it = runList.iterator(); it.hasNext(); ) {
                                 Run latestBuild = (Run) it.next();
                                 List<Cause> buildCauses = latestBuild.getCauses();
-                                Cause buildCause = null;
+                                UpstreamCause buildCause = null;
                                 boolean userCause = false;
                                 for (Cause c : buildCauses) {
                                     if (c instanceof Cause.UserIdCause || c instanceof Cause.UserCause || c instanceof Cause.RemoteCause) {
@@ -223,22 +203,20 @@ public class TriggerBuilder extends Builder implements DependencyDeclarer {
                                         break;
                                     }
                                     if ((c instanceof UpstreamCause)) {
-                                        buildCause = c;
+                                        buildCause = (UpstreamCause) c;
                                     }
                                 }
                                 if (!userCause && buildCause != null) {
-                                    UpstreamCause upstreamCause = (UpstreamCause) buildCause;
-                                    if (upstreamCause.pointsTo(build)) {
+                                    if (buildCause.pointsTo(build)) {
+                                        numCounted++;
                                         if (latestBuild.isBuilding()) {
                                             latestBuild.setResult(Result.ABORTED);
-                                            if (latestBuild.isBuilding()) {
-                                                latestBuild.getExecutor().doStop();
-                                                listener.getLogger().println("Aborted " + HyperlinkNote.encodeTo('/' + latestBuild.getUrl(), latestBuild.getFullDisplayName()));
-                                            }
+                                            latestBuild.getExecutor().doStop();
+                                            listener.getLogger().println("Aborted " + HyperlinkNote.encodeTo('/' + latestBuild.getUrl(), latestBuild.getFullDisplayName()));
                                         }
                                     }
                                 }
-                                if (numAborted + numQueueAborted == runs.size()) {
+                                if (numCounted == runs.size()) {
                                     throw y;
                                 }
                             }
