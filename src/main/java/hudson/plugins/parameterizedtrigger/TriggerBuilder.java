@@ -243,6 +243,7 @@ public class TriggerBuilder extends Builder implements DependencyDeclarer {
                                             latestBuild.setResult(Result.ABORTED);
                                             latestBuild.getExecutor().doStop();
                                             listener.getLogger().println("Aborted " + HyperlinkNote.encodeTo('/' + latestBuild.getUrl(), latestBuild.getFullDisplayName()));
+                                            BuildInfoExporterAction.addBuildInfoExporterAction(build, latestBuild.getParent().getFullName(), latestBuild.getNumber(), latestBuild.getResult());
                                         }
                                     }
                                 }
