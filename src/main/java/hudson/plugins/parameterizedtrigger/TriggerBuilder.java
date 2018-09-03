@@ -186,7 +186,7 @@ public class TriggerBuilder extends Builder implements DependencyDeclarer {
                                         }
                                     } catch (CancellationException x) {
                                         listener.getLogger().println("An instance of " + p.getFullDisplayName() +  " was cancelled");
-                                        //throw new AbortException(p.getFullDisplayName() + " aborted.");
+                                        throw new AbortException(p.getFullDisplayName() + " aborted.");
                                     }
                                 }
                             }
