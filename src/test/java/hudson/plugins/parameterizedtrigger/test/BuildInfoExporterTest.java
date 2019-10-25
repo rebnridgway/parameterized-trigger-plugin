@@ -359,7 +359,7 @@ public void test_oddchars() throws Exception {
                       r.jenkins.getItemByFullName("downstream1", FreeStyleProject.class).getBuildByNumber(2),
                       r.jenkins.getItemByFullName("downstream2", FreeStyleProject.class).getBuildByNumber(1)
               ),
-              new HashSet<AbstractBuild<?,?>>(action.getTriggeredBuilds())
+              new HashSet<Run<?,?>>(action.getTriggeredBuilds())
           );
           
           EnvVars env = new EnvVars();
@@ -389,7 +389,7 @@ public void test_oddchars() throws Exception {
                       r.jenkins.getItemByFullName("downstream1", FreeStyleProject.class).getBuildByNumber(2),
                       r.jenkins.getItemByFullName("downstream2", FreeStyleProject.class).getBuildByNumber(1)
               ),
-              new HashSet<AbstractBuild<?,?>>(action.getTriggeredBuilds())
+              new HashSet<Run<?,?>>(action.getTriggeredBuilds())
           );
           
           EnvVars env = new EnvVars();
