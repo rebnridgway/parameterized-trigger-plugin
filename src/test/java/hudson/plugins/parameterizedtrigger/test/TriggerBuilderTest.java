@@ -37,6 +37,8 @@ import hudson.plugins.parameterizedtrigger.CounterBuildParameterFactory;
 import hudson.plugins.parameterizedtrigger.TriggerBuilder;
 import hudson.plugins.promoted_builds.PromotionProcess;
 import hudson.plugins.promoted_builds.conditions.DownstreamPassCondition;
+import hudson.tasks.Shell;
+import hudson.util.RunList;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.junit.Rule;
@@ -48,11 +50,13 @@ import hudson.matrix.MatrixRun;
 import hudson.matrix.AxisList;
 import hudson.model.queue.QueueTaskFuture;
 
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.ListIterator;
+import java.util.concurrent.Future;
+import java.util.Iterator;
+import java.util.concurrent.ExecutionException;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 import java.io.IOException;
@@ -67,10 +71,7 @@ import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.SleepBuilder;
 import org.mockito.Mockito;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.when;
 
@@ -146,6 +147,48 @@ public class TriggerBuilderTest {
                 "project5 #1 completed. Result was SUCCESS",
                 "project6 #1 started.",
                 "project6 #1 completed. Result was SUCCESS");
+    }
+
+    @Issue("JENKINS-11257")
+    @Test
+    public void testDownstreamAbort() throws Exception {
+        Shell shell = new Shell("sleep 1m");
+        Project <?,?> project1 = r.createFreeStyleProject("project1");
+        project1.getBuildersList().add(shell);
+
+        final Project <?,?> triggerProject = r.createFreeStyleProject("projectA");
+        triggerProject.getBuildersList().add(new TriggerBuilder(createTriggerConfig("project1")));
+
+        Thread thread = TriggerBuilderScheduleThread(triggerProject);
+        thread.start();
+
+        Thread.sleep(100);
+        AbortAllProjectBuilds(triggerProject);
+        thread.join();
+
+        r.assertBuildStatus(Result.ABORTED, project1.getLastBuild());
+        assertLines(triggerProject.getLastBuild(),
+                "Aborted project1 #1");
+
+    }
+
+    @Issue("JENKINS-11257")
+    @Test
+    public void testDownstreamQueueAbort() throws Exception {
+        r.jenkins.setNumExecutors(1);
+        r.createFreeStyleProject("project1");
+
+        final Project<?, ?> triggerProject = r.createFreeStyleProject("projectA");
+        triggerProject.getBuildersList().add(new TriggerBuilder(createTriggerConfig("project1")));
+
+        Thread thread = TriggerBuilderScheduleThread(triggerProject);
+        thread.start();
+
+        Thread.sleep(100);
+        AbortAllProjectBuilds(triggerProject);
+        thread.join();
+
+        assertTrue(r.jenkins.getQueue().isEmpty());
     }
 
     @Test
@@ -577,6 +620,38 @@ public class TriggerBuilderTest {
             // set up rest to contain the part of the log that has not been successfully checked
             rest = log.subList(lastmatched + 1, log.size());
             assertTrue("Could not find regex '" + regex + "' among remaining log lines " + rest, li.hasNext() );
+        }
+    }
+
+    private Thread TriggerBuilderScheduleThread(final Project<?,?> triggerProject) throws IOException {
+
+        Runnable runnable = new Runnable() {
+            public void run() {
+                try {
+                    triggerProject.scheduleBuild2(0).get();
+                } catch (InterruptedException e) {
+                    //pass
+                } catch (ExecutionException e) {
+                    //pass
+                }
+            }
+        };
+        return new Thread(runnable);
+    }
+
+    private void AbortAllProjectBuilds(Project<?,?> project) throws IOException {
+        for (Job job : project.getAllJobs()) {
+            if (job.getName().equals(project.getName())) {
+                RunList runList = job.getBuilds();
+                for (Iterator<Build> it = runList.iterator(); it.hasNext(); ) {
+                    Build build = it.next();
+                    try {
+                        build.doStop();
+                    } catch (javax.servlet.ServletException ex) {
+                        //pass
+                    }
+                }
+            }
         }
     }
 }

@@ -188,7 +188,7 @@ public class BuildTriggerConfig implements Describable<BuildTriggerConfig> {
      * @param context   The container with which to resolve relative project names.
      * @return A data object containing sets with projects
      */
-    public SubProjectData getProjectInfo(AbstractProject context) {
+    public SubProjectData getProjectInfo(Job context) {
 
         SubProjectData subProjectData = new SubProjectData();
 
@@ -217,7 +217,7 @@ public class BuildTriggerConfig implements Describable<BuildTriggerConfig> {
      * @param projects          String containing the defined projects to build
      * @param subProjectData    Data object containing sets storing projects
      */
-    private static void iterateBuilds(AbstractProject context, String projects, SubProjectData subProjectData) {
+    private static void iterateBuilds(Job context, String projects, SubProjectData subProjectData) {
 
         StringTokenizer stringTokenizer = new StringTokenizer(projects, ",");
         while (stringTokenizer.hasMoreTokens()) {
@@ -234,10 +234,10 @@ public class BuildTriggerConfig implements Describable<BuildTriggerConfig> {
             // If we don't have any build there's no point to trying to resolved dynamic projects
             if (currentBuild == null) {
                 // But we can still get statically defined project
-                subProjectData.getFixed().addAll(readableItemsFromNameList(context.getParent(), projects, AbstractProject.class));
+                subProjectData.getFixed().addAll(readableItemsFromNameList(context.getParent(), projects, Job.class));
                 
                 // Remove them from unsolved
-                for (AbstractProject staticProject : subProjectData.getFixed()) {
+                for (Job staticProject : subProjectData.getFixed()) {
                     subProjectData.getUnresolved().remove(staticProject.getFullName());
                 }
                 return;
@@ -305,7 +305,7 @@ public class BuildTriggerConfig implements Describable<BuildTriggerConfig> {
         while (unsolvedProjectIterator.hasNext()) {
 
             String unresolvedProjectName = unsolvedProjectIterator.next();
-            Set<AbstractProject> destinationSet = subProjectData.getFixed();
+            Set<Job> destinationSet = subProjectData.getFixed();
 
             // expand variables if applicable
             if (unresolvedProjectName.contains("$")) {
@@ -321,10 +321,10 @@ public class BuildTriggerConfig implements Describable<BuildTriggerConfig> {
             }
 
             final Jenkins jenkins = Jenkins.getInstance();
-            AbstractProject resolvedProject = null;
+            Job resolvedProject = null;
             try {
                 resolvedProject = jenkins == null ? null :
-                        jenkins.getItem(unresolvedProjectName, build.getProject().getParent(), AbstractProject.class);
+                        jenkins.getItem(unresolvedProjectName, build.getProject().getParent(), Job.class);
             } catch (AccessDeniedException ex) {
                 // Permission check failure (DISCOVER w/o READ) => we leave the job unresolved
             }
@@ -336,7 +336,7 @@ public class BuildTriggerConfig implements Describable<BuildTriggerConfig> {
 
         if (build != null && build.getAction(BuildInfoExporterAction.class) != null) {
             String triggeredProjects = build.getAction(BuildInfoExporterAction.class).getProjectListString(",");
-            subProjectData.getTriggered().addAll(readableItemsFromNameList(build.getParent().getParent(), triggeredProjects, AbstractProject.class));
+            subProjectData.getTriggered().addAll(readableItemsFromNameList(build.getParent().getParent(), triggeredProjects, Job.class));
         }
     }
 

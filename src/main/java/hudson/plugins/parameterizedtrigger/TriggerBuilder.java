@@ -43,10 +43,16 @@ import hudson.model.Job;
 import hudson.model.Run;
 import hudson.model.User;
 import hudson.model.queue.QueueTaskFuture;
+import hudson.model.Queue;
+import hudson.model.Result;
+import hudson.model.Cause;
+import hudson.model.Cause.UpstreamCause;
+import hudson.util.IOException2;
+import hudson.util.RunList;
 import jenkins.model.DependencyDeclarer;
+import org.jvnet.libpam.impl.PAMLibrary;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.stapler.DataBoundConstructor;
-
 import java.io.IOException;
 import java.lang.RuntimeException;
 import java.util.*;
@@ -54,6 +60,19 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.StringTokenizer;
+import java.util.Arrays;
+import java.util.TreeSet;
+import java.util.Iterator;
+import java.util.Collection;
+
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import jenkins.model.Jenkins;
 
 /**
  * {@link Builder} that triggers other projects and optionally waits for their completion.
@@ -84,7 +103,7 @@ public class TriggerBuilder extends Builder implements DependencyDeclarer {
 
     @Override
     public boolean perform(AbstractBuild<?, ?> build, Launcher launcher,
-            BuildListener listener) throws InterruptedException, IOException {
+                           BuildListener listener) throws InterruptedException, IOException {
         EnvVars env = build.getEnvironment(listener);
         env.overrideAll(build.getBuildVariables());
 
@@ -103,7 +122,7 @@ public class TriggerBuilder extends Builder implements DependencyDeclarer {
                     throw new AbortException("Build aborted. No projects to trigger. Check your configuration!");
                 } else if (tokenizer.countTokens() != projectList.size()) {
 
-                    int nbrOfResolved = tokenizer.countTokens()-projectList.size();
+                    int nbrOfResolved = tokenizer.countTokens() - projectList.size();
 
                     // Identify the unresolved project(s)
                     Set<String> unsolvedProjectNames = new TreeSet<String>();
@@ -122,12 +141,12 @@ public class TriggerBuilder extends Builder implements DependencyDeclarer {
                         missingProject.append("\n");
                     }
 
-                    throw new AbortException("Build aborted. Can't trigger undefined projects. "+nbrOfResolved+" of the below project(s) can't be resolved:\n" + missingProject.toString() + "Check your configuration!");
+                    throw new AbortException("Build aborted. Can't trigger undefined projects. " + nbrOfResolved + " of the below project(s) can't be resolved:\n" + missingProject.toString() + "Check your configuration!");
                 } else {
                     //handle non-blocking configs
-                    if(futures.isEmpty()){
+                    if (futures.isEmpty()) {
                         listener.getLogger().println("Triggering projects: " + getProjectListAsString(projectList));
-                        for(Job p : projectList) {
+                        for (Job p : projectList) {
                             BuildInfoExporterAction.addBuildInfoExporterAction(build, p.getFullName());
                         }
                         continue;
@@ -135,35 +154,112 @@ public class TriggerBuilder extends Builder implements DependencyDeclarer {
                     //handle blocking configs
                     for (Job p : projectList) {
                         //handle non-buildable projects
-                        if(!config.canBeScheduled(p)){
-                            listener.getLogger().println("Skipping " + HyperlinkNote.encodeTo('/'+ p.getUrl(), p.getFullDisplayName()) + 
+                        if (!config.canBeScheduled(p)) {
+                            listener.getLogger().println("Skipping " + HyperlinkNote.encodeTo('/' + p.getUrl(), p.getFullDisplayName()) +
                                     ". The project is either disabled,"
                                     + " or the authenticated user " + ModelHyperlinkNote.encodeTo(User.current()) + " has no Item.BUILD permissions,"
                                     + " or the configuration has not been saved yet.");
                             continue;
                         }
-                        for (QueueTaskFuture<AbstractBuild> future : futures.get(p)) {
-                            try {
-                                if (future != null ) {
-                                    listener.getLogger().println("Waiting for the completion of " + HyperlinkNote.encodeTo('/'+ p.getUrl(), p.getFullDisplayName()));
-                                    Run startedRun = future.waitForStart();
-                                    listener.getLogger().println(HyperlinkNote.encodeTo('/' + startedRun.getUrl(), startedRun.getFullDisplayName()) + " started.");
 
-                                    Run completedRun = future.get();
-                                    listener.getLogger().println(HyperlinkNote.encodeTo('/' + completedRun.getUrl(), completedRun.getFullDisplayName()) + " completed. Result was " + completedRun.getResult());
-                                    BuildInfoExporterAction.addBuildInfoExporterAction(build, completedRun.getParent().getFullName(), completedRun.getNumber(), completedRun.getResult());
+                        List<Future<Run>> runs = futures.get(p);
+                        try {
+                            listener.getLogger().println("Waiting for the completion of " + HyperlinkNote.encodeTo('/' + p.getUrl(), p.getFullDisplayName()) + " (" + runs.size() +")");
+                            while (!runs.isEmpty()) {
+                                List<Future<Run>> total_runs = new ArrayList<>(runs);
+                                for (Future<Run> future : total_runs)
+                                {
+                                    try {
+                                        if (future != null) {
+                                            if (!future.isDone()) {
+                                                try {
+                                                    Thread.sleep(100);
+                                                } catch (InterruptedException ex) {
+                                                    throw ex;
+                                                }
+                                                continue;
+                                            }
+                                            runs.remove(future);
+                                            Run b = future.get();
+                                            listener.getLogger().println(HyperlinkNote.encodeTo('/' + b.getUrl(), b.getFullDisplayName()) + " completed. Result was " + b.getResult());
+                                            BuildInfoExporterAction.addBuildInfoExporterAction(build, b.getParent().getFullName(), b.getNumber(), b.getResult());
 
-                                    if (buildStepResult && config.getBlock().mapBuildStepResult(completedRun.getResult())) {
-                                        build.setResult(config.getBlock().mapBuildResult(completedRun.getResult()));
-                                    } else {
-                                        buildStepResult = false;
+                                            if (buildStepResult && config.getBlock().mapBuildStepResult(b.getResult())) {
+                                                build.setResult(config.getBlock().mapBuildResult(b.getResult()));
+                                            } else {
+                                                buildStepResult = false;
+                                            }
+                                        } else {
+                                            listener.getLogger().println("Skipping " + ModelHyperlinkNote.encodeTo(p) + ". The project was not triggered by some reason.");
+                                        }
+                                    } catch (CancellationException x) {
+                                        listener.getLogger().println("An instance of " + p.getFullDisplayName() +  " was cancelled");
+                                        throw new AbortException(p.getFullDisplayName() + " aborted.");
                                     }
-                                } else {
-                                    listener.getLogger().println("Skipping " + ModelHyperlinkNote.encodeTo(p) + ". The project was not triggered by some reason.");
                                 }
-                            } catch (CancellationException x) {
-                                throw new AbortException(p.getFullDisplayName() +" aborted.");
                             }
+                        } catch (InterruptedException y) {
+                            Queue buildQueue = Jenkins.getInstance().getQueue();
+                            int numQueueAborted = 0;
+                            for (Queue.Item queueItem : buildQueue.getItems()) {
+                                List<Cause> causes = queueItem.getCauses();
+                                Cause buildQueueCause = null;
+                                boolean userQueueCause = false;
+                                for (Cause c : causes) {
+                                    if (c instanceof Cause.UserIdCause || c instanceof Cause.UserCause || c instanceof Cause.RemoteCause) {
+                                        userQueueCause = true;
+                                        break;
+                                    }
+                                    if ((c instanceof UpstreamCause)) {
+                                        buildQueueCause = c;
+                                    }
+                                }
+                                if (!userQueueCause && buildQueueCause != null) {
+                                    UpstreamCause upstreamCause = (UpstreamCause) buildQueueCause;
+                                    if (upstreamCause.pointsTo(build)) {
+                                        numQueueAborted++;
+                                        boolean cancelled = buildQueue.cancel(queueItem);
+                                        if (cancelled) {
+                                            listener.getLogger().println("Removed item from Queue (Reason for queueing: " + queueItem.getWhy() + ")");
+                                        }
+                                    }
+                                }
+                                if (numQueueAborted == runs.size()) {
+                                    throw y;
+                                }
+                            }
+                            RunList runList = p.getBuilds();
+                            int numAborted = 0;
+                            for (Iterator it = runList.iterator(); it.hasNext(); ) {
+                                Run latestBuild = (Run) it.next();
+                                List<Cause> buildCauses = latestBuild.getCauses();
+                                Cause.UpstreamCause buildCause = null;
+                                boolean userCause = false;
+                                for (Cause c : buildCauses) {
+                                    if (c instanceof Cause.UserIdCause || c instanceof Cause.UserCause || c instanceof Cause.RemoteCause) {
+                                        userCause = true;
+                                        break;
+                                    }
+                                    if ((c instanceof Cause.UpstreamCause)) {
+                                        buildCause = (Cause.UpstreamCause) c;
+                                    }
+                                }
+                                if (!userCause && buildCause != null) {
+                                    if (buildCause.pointsTo(build)) {
+                                        if (latestBuild.isBuilding()) {
+                                            numAborted++;
+                                            latestBuild.setResult(Result.ABORTED);
+                                            latestBuild.getExecutor().doStop();
+                                            listener.getLogger().println("Aborted " + HyperlinkNote.encodeTo('/' + latestBuild.getUrl(), latestBuild.getFullDisplayName()));
+                                            BuildInfoExporterAction.addBuildInfoExporterAction(build, latestBuild.getParent().getFullName(), latestBuild.getNumber(), latestBuild.getResult());
+                                        }
+                                    }
+                                }
+                                if (numAborted + numQueueAborted == runs.size()) {
+                                    throw y;
+                                }
+                            }
+                            throw y;
                         }
                     }
                 }

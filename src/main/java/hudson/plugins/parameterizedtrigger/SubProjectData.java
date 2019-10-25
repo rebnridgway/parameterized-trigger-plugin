@@ -24,7 +24,7 @@
 
 package hudson.plugins.parameterizedtrigger;
 
-import hudson.model.AbstractProject;
+import hudson.model.Job;
 
 import java.util.Comparator;
 import java.util.Set;
@@ -44,23 +44,23 @@ import java.util.TreeSet;
  */
 public class SubProjectData {
 
-    private final Comparator customComparator = new Comparator<AbstractProject>() {
-        public int compare(AbstractProject abstractProject1, AbstractProject abstractProject2) {
+    private final Comparator customComparator = new Comparator<Job>() {
+        public int compare(Job abstractProject1, Job abstractProject2) {
             return abstractProject1.getFullName().compareTo(abstractProject2.getFullName());
         }
     };
 
-    private final Set<AbstractProject> dynamic = new TreeSet<AbstractProject>(customComparator);
-    private final Set<AbstractProject> fixed = new TreeSet<AbstractProject>(customComparator);
-    private final Set<AbstractProject> triggered = new TreeSet<AbstractProject>(customComparator);
-    private final Set<String> unresolved = new TreeSet<String>();
+    private Set<Job> dynamic = new TreeSet<Job>(customComparator);
+    private Set<Job> fixed = new TreeSet<Job>(customComparator);
+    private Set<Job> triggered = new TreeSet<Job>(customComparator);
+    private Set<String> unresolved = new TreeSet<String>();
 
     /**
      * A set intended to hold dynamically configured sub project
      *
      * @return  A set reserved for dynamically configured sub project
      */
-    public Set<AbstractProject> getDynamic() {
+    public Set<Job> getDynamic() {
         return dynamic;
     }
 
@@ -69,7 +69,7 @@ public class SubProjectData {
      *
      * @return  A set reserved for fixed configured sub project
      */
-    public Set<AbstractProject> getFixed() {
+    public Set<Job> getFixed() {
         return fixed;
     }
 
@@ -78,7 +78,7 @@ public class SubProjectData {
      *
      * @return  A set reserved for triggered sub project
      */
-    public Set<AbstractProject> getTriggered() {
+    public Set<Job> getTriggered() {
         return triggered;
     }
 
